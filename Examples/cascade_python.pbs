@@ -1,0 +1,15 @@
+#!/bin/bash
+#PBS -A niwa03150
+#PBS -N python
+#PBS -l select=1:ncpus=1:mem=20gb
+#PBS -l walltime=1:00:00
+#PBS -o pbs_output.out
+#PBS -j oe
+
+cd $PBS_O_WORKDIR
+.  /opt/niwa/profile/conda_24.11.3_2025.05.1.sh
+conda activate py311
+
+python get_compute_resource.py
+python inundation_stats_BG.py
+python export_Umax.py

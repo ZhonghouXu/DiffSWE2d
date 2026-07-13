@@ -1,12 +1,28 @@
+Metadata-Version: 2.4
+Name: diffswe2d
+Version: 0.1.0
+Summary: Differentiable b-flood-style Shallow Water Equation solver
+Requires-Python: >=3.8
+Description-Content-Type: text/markdown
+License-File: LICENSE
+Requires-Dist: torch>=2.1
+Requires-Dist: netCDF4>=1.6
+Requires-Dist: numpy>=1.24
+Requires-Dist: xarray>=2024.1
+Requires-Dist: scipy>=1.10
+Requires-Dist: pytest>=7
+Dynamic: license-file
+
 # diffswe2d
 
 A PyTorch-based, piecewise-differentiable two-dimensional shallow-water
 equations solver for flood simulation and DEM inversion. The solver uses a
-structured square-cell model grid and Basilisk B-Flood/BG-Flood style finite-volume method.
+structured square-cell model grid, B-Flood-inspired finite-volume numerics,
+and precipitation-volume-conserving rainfall remapping.
 
 ## Overview
 
-**diffswe2d** implements a vectorized 2-D shallow-water solver
+**diffswe2d_conservative** implements a vectorized 2-D shallow-water solver
 on a uniform Cartesian grid with square cells (`dx == dy`). It is compatible
 with PyTorch automatic differentiation and can run on either CPUs or
 CUDA-capable GPUs.

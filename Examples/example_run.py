@@ -1,13 +1,19 @@
 """Run on a square-cell custom grid with conservative rainfall remapping."""
 import torch
-from DIFFSWE2D import SWE2D, SWEConfig, ModelGrid
+from diffswe2d import SWE2D, SWEConfig, ModelGrid
+import xarray as xr
 
 torch.set_default_dtype(torch.float64)
 device="cuda" if torch.cuda.is_available() else "cpu"
 
 model_grid=ModelGrid.from_bounds(
-    xmin=100000.,xmax=120000.,ymin=500000.,ymax=515000.,
-    resolution=25.,dtype=torch.float64,device=device)
+    xmin=0.,
+    xmax=1580.,
+    ymin=0.,
+    ymax=780.,
+    resolution=10.,
+    dtype=torch.float64,
+    device=device)
 
 model=SWE2D.from_netcdf(
     dem_path="dem_and_roughness.nc",
@@ -24,6 +30,7 @@ model=SWE2D.from_netcdf(
     train_dem=False,
     maximum_dem_correction=1.0)
 
+model = model.to(device)
 ny,nx=model.bed.shape[-2:]
 U0=torch.zeros(1,3,ny,nx,dtype=torch.float64,device=device)
 U0[:,0:1]=torch.clamp(1.0-model.bed,min=0.0)

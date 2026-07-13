@@ -1,0 +1,22 @@
+#!/bin/bash
+#PBS -N GPU_Diff
+#PBS -l walltime=24:00:00
+#PBS -A niwa03150
+#PBS -q a100q
+#PBS -l select=1:ncpus=4:ngpus=1:mem=80GB:nodepool=a100p
+
+# Load modules (on Cascade)
+.  /opt/niwa/profile/conda_24.11.3_2025.05.1.sh
+conda activate diffswe2d
+
+# Go to the directory from which the job was submitted
+cd $PBS_O_WORKDIR
+
+# Display information about the available GPUs
+nvidia-smi
+
+# Check CUDA_VISIBLE_DEVICES
+echo "CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES}"
+
+# Run your executable
+python example_run.py
