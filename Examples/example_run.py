@@ -38,13 +38,13 @@ U0[:,0:1]=torch.clamp(1.0-model.bed,min=0.0)
 # Run inference mode to avoid gradient tracking and reduce memory usage in forward pass
 model.eval()
 with torch.inference_mode():
-    result=model(U0,t_end=3600.)
+    result, hmax_tensor=model(U0,t_end=3600.)
 print("cells:",ny,nx,"square resolution:",model.dx)
 print("depth range:",float(result[:,0].min()),float(result[:,0].max()))
 
 # Output the maximum water depth to a NetCDF file
 # Extract and save max water depth to NetCDF
-max_depth = result[0, 0].cpu().numpy()  # Remove batch dimension and move to CPU
+max_depth = hmax_tensor[0].cpu().numpy()  # Remove batch dimension and move to CPU
 
 # Create xarray Dataset
 ds = xr.Dataset(
