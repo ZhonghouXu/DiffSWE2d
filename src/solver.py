@@ -187,12 +187,14 @@ class SWE2D(nn.Module):
                 infiltration=None, callback=None):
         """Advance from start_time to start_time+t_end with adaptive CFL steps."""
         U = U0
+        hmax = U[:, 0].clone()
         elapsed = 0.0
         for iteration in range(max_steps):
             if elapsed >= t_end - 1.0e-14:
-                return U
+                return U, hmax
             dt_value = min(float(self.stable_dt(U).detach()), t_end - elapsed)
             U = self.step(U, dt_value, start_time + elapsed, infiltration)
+            hmax = torch.maximum(hmax, U[:, 0])
             elapsed += dt_value
             if callback is not None:
                 callback(iteration, start_time + elapsed, U)
