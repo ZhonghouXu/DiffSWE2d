@@ -17,5 +17,8 @@ dependencies = [
     "pytest>=7"
 ]
 
-[tool.setuptools.packages.find]
-where = ["src"]
+[tool.setuptools]
+packages = ["diffswe2d"]
+
+[tool.setuptools.package-dir]
+diffswe2d = "src"
