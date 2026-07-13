@@ -1,6 +1,6 @@
 """Run on a square-cell custom grid with conservative rainfall remapping."""
 import torch
-from DIFFSWE2D import SWE2D, SWEConfig, ModelGrid
+from diffswe2d import SWE2D, SWEConfig, ModelGrid
 
 torch.set_default_dtype(torch.float64)
 device="cuda" if torch.cuda.is_available() else "cpu"
