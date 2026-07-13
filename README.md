@@ -1,4 +1,4 @@
-# diffswe2d_conservative
+# diffswe2d
 
 A PyTorch-based, piecewise-differentiable two-dimensional shallow-water
 equations solver for flood simulation and DEM inversion. The solver uses a
