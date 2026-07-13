@@ -1,5 +1,8 @@
-# Specify the custom PyTorch index for CUDA 12.6
+# Specify the custom PyTorch index for CUDA 12.6 depending on your cuda version
 --extra-index-url https://download.pytorch.org/whl/cu126
 
 # Install the local DiffSWE2d package (which reads your pyproject.toml)
 -e .
+
+# How to install
+# pip install -r requirements.txt
