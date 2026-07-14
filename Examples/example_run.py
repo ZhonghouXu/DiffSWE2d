@@ -1,12 +1,18 @@
 """Run on a square-cell custom grid with conservative rainfall remapping."""
 import torch
-from diffswe2d import SWE2D, SWEConfig, ModelGrid
+from diffswe2d import SWE2D, SWEConfig, ModelGrid, io_ascii
 import xarray as xr
 import numpy as np
 
 torch.set_default_dtype(torch.float64)
 device="cuda" if torch.cuda.is_available() else "cpu"
 
+# --- Define your inputs here ---
+# The script will automatically adapt based on the extension you type here!
+dem_filepath = "my_topography.asc"  # Change this to .nc to use the NetCDF method
+rain_filepath = "my_rainfall.txt"
+
+# model domain
 model_grid=ModelGrid.from_bounds(
     xmin=0.,
     xmax=1580.,
@@ -16,20 +22,45 @@ model_grid=ModelGrid.from_bounds(
     dtype=torch.float64,
     device=device)
 
-model=SWE2D.from_netcdf(
-    dem_path="dem_and_roughness.nc",
-    rainfall_path="rainfall.nc",
-    model_grid=model_grid,
-    dem_variable="elevation",
-    roughness_variable="z0",
-    rainfall_variable="rainfall",
-    rainfall_units="mm/h",
-    config=SWEConfig(rainfall_outside_domain="zero"),
-    dem_method="linear",
-    roughness_method="linear",
-    dem_outside_domain="error",
-    train_dem=False,
-    maximum_dem_correction=1.0)
+# --- Dynamically Load the Model ---
+if dem_filepath.endswith('.nc'):
+    print(f"Loading DEM from NetCDF: {dem_filepath}")
+    model = SWE2D.from_netcdf(
+        dem_filepath, 
+        rainfall_path="rainfall.nc",
+        model_grid=model_grid,
+        dem_variable="elevation",
+        roughness_variable="z0",
+        rainfall_variable="rainfall",
+        rainfall_units="mm/h",
+        config=SWEConfig(rainfall_outside_domain="zero"),
+        dem_method="linear",
+        roughness_method="linear",
+        dem_outside_domain="error",
+        train_dem=False,
+        maximum_dem_correction=1.0
+    ).to(device)
+    
+    # (If using NetCDF, you can also load your NetCDF rainfall here)
+    use_txt_rainfall = False
+
+elif dem_filepath.endswith('.asc'):
+    print(f"Loading DEM from ASCII: {dem_filepath}")
+    bed_tensor, dem_header = load_asc_dem(dem_filepath, device=device)
+    
+    model = SWE2D(
+        bed=bed_tensor,
+        resolution=dem_header['cellsize'],
+        config=SWEConfig(rainfall_outside_domain="zero"),
+    ).to(device)
+    
+    # Load the text rainfall
+    rain_times, rain_amounts = load_rainfall_txt(rain_filepath)
+    use_txt_rainfall = True
+
+else:
+    raise ValueError("Unsupported DEM format! Please provide a .nc or .asc file.")
+
 
 #--------params------------------------------------
 batch_size = 1
@@ -87,7 +118,11 @@ with torch.inference_mode():
             # Store the values in our dictionary
             gauge_data[i]['h'].append(h_point)
             gauge_data[i]['z'].append(z_point)
-            
+
+        if use_txt_rainfall:
+            current_rain = np.interp(t, rain_times, rain_amounts)
+            U[:, 0, :, :] += (current_rain * dt_out)
+
         # Step the physics model forward by dt_out. note t_end in model is the duration of each run
         result, hmax_tensor = model(U, t_end=dt_out, start_time=t)
         t += dt_out
