@@ -53,11 +53,12 @@ bed_elevations = []
 
 # Convert all coordinates to grid indices and extract their bed elevations
 for target_x, target_y in gauge_coords:
-    ix = int((target_x - model_grid.xmin) / model_grid.resolution)
-    iy = int((target_y - model_grid.ymin) / model_grid.resolution)
+    # Find the index with the minimum absolute distance to the target coordinate
+    ix = torch.argmin(torch.abs(model_grid.x - target_x)).item()
+    iy = torch.argmin(torch.abs(model_grid.y - target_y)).item()
     
     gauge_indices.append((iy, ix))
-    bed_elevations.append(model.bed[iy, ix].item())
+    bed_elevations.append(model.bed[0, 0, iy, ix].item())
 
 # Initialize a dictionary to store the lists of h and z for each gauge
 # It will look like: {0: {'h': [], 'z': []}, 1: {'h': [], 'z': []}, ...}

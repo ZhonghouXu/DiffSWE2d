@@ -1,5 +1,0 @@
-Traceback (most recent call last):
-  File "/esi/project/niwa03150/xuz/models/DiffSWE2d/Examples/example_run.py", line 56, in <module>
-    ix = int((target_x - model_grid.xmin) / model_grid.resolution)
-                         ^^^^^^^^^^^^^^^
-AttributeError: 'ModelGrid' object has no attribute 'xmin'

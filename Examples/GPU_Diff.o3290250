@@ -1,4 +1,4 @@
-Tue Jul 14 00:36:46 2026       
+Tue Jul 14 01:00:09 2026       
 +-----------------------------------------------------------------------------------------+
 | NVIDIA-SMI 570.195.03             Driver Version: 570.195.03     CUDA Version: 12.8     |
 |-----------------------------------------+------------------------+----------------------+
@@ -19,3 +19,7 @@ Tue Jul 14 00:36:46 2026
 |  No running processes found                                                             |
 +-----------------------------------------------------------------------------------------+
 CUDA_VISIBLE_DEVICES=GPU-bcaba7a3-4462-e023-21cf-3f9f1e926be4
+cells: 78 158 square resolution: 10.0
+depth range: 0.0 0.0
+Successfully saved 3 gauge text files!
+Saved maximum water depth to hmax.nc

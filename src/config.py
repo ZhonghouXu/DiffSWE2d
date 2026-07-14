@@ -10,7 +10,7 @@ class SWEConfig:
     epsilon: float = 1.0e-12
     cfl: float = 0.35
     limiter_theta: float = 1.3
-    boundary: str = "wall"  # "wall", "transmissive", or "periodic"
+    boundary: str = "water_level"  # "wall", "constant", "water_level", "transmissive", or "periodic"
     water_slope_reset: bool = True
     positivity_limiter: bool = True
     apply_friction: bool = True
