@@ -2,6 +2,7 @@
 import torch
 from diffswe2d import SWE2D, SWEConfig, ModelGrid, io_ascii
 from diffswe2d.io_ascii import ascii_to_tensor, load_rainfall_txt
+from diffswe2d.model_loader import load_dynamic_model
 import xarray as xr
 import numpy as np
 
@@ -12,6 +13,12 @@ device="cuda" if torch.cuda.is_available() else "cpu"
 # The script will automatically adapt based on the extension you type here!
 dem_filepath = "my_topography.asc"  # Change this to .nc to use the NetCDF method
 rain_filepath = "my_rainfall.txt"
+
+# Set boundary conditions here
+bnd_left = "transmissive"
+bnd_right = "wall"
+bnd_top = "wall"
+bnd_bottom = "water_level"
 
 # model domain
 model_grid=ModelGrid.from_bounds(
@@ -24,73 +31,16 @@ model_grid=ModelGrid.from_bounds(
     device=device)
 
 # --- Dynamically Load the Model ---
-if dem_filepath.endswith('.nc'):
-    print(f"Loading DEM from NetCDF: {dem_filepath}")
-    model = SWE2D.from_netcdf(
-        dem_filepath, 
-        rainfall_path="rainfall.nc",
-        model_grid=model_grid,
-        dem_variable="elevation",
-        roughness_variable="z0",
-        rainfall_variable="rainfall",
-        rainfall_units="mm/h",
-        config=SWEConfig(
-            boundary_left="transmissive",
-            boundary_right="wall",
-            boundary_top="wall",
-            boundary_bottom="water_level"
-            ),
-        dem_method="linear",
-        roughness_method="linear",
-        dem_outside_domain="error",
-        train_dem=False,
-        maximum_dem_correction=1.0
-    ).to(device)
-    
-    # (If using NetCDF, you can also load your NetCDF rainfall here)
-    use_txt_rainfall = False
-
-elif dem_filepath.endswith('.asc'):
-    print(f"Loading DEM from ASCII: {dem_filepath}")
-    bed_tensor, grid_spec = ascii_to_tensor(
-        filepath=dem_filepath,
-        model_grid=model_grid,
-        method="linear",
-        outside_domain="error",
-        fill_internal_nodata=True,
-        dtype=torch.float64,
-        device=device,
-    )
-     
-    model = SWE2D.from_ascii(
-        dem_path=dem_filepath,
-        roughness_path="roughness.asc", # default_roughness=0.03, # a uniform roughness
-        model_grid=model_grid,
-        config=SWEConfig(
-            boundary_left="transmissive",
-            boundary_right="wall",
-            boundary_top="wall",
-            boundary_bottom="water_level"
-            ),
-        dem_method="linear",
-        roughness_method="nearest",
-        dem_outside_domain="error",
-        roughness_outside_domain="nearest",
-        fill_dem_nodata=True,
-        fill_roughness_nodata=True,
-        train_dem=False,
-        maximum_dem_correction=1.0,
-        device=device,
-        dtype=torch.float64,
-    ).to(device)
-    
-    # Load the text rainfall
-    rain_times, rain_amounts = load_rainfall_txt(rain_filepath)
-    use_txt_rainfall = True
-
-else:
-    raise ValueError("Unsupported DEM format! Please provide a .nc or .asc file.")
-
+model, use_txt_rainfall, rain_times, rain_amounts = load_dynamic_model(
+    dem_filepath=dem_filepath, 
+    rain_filepath=rain_filepath, 
+    model_grid=model_grid, 
+    device=device,
+    boundary_left=bnd_left,
+    boundary_right=bnd_right,
+    boundary_top=bnd_top,
+    boundary_bottom=bnd_bottom
+)
 
 #--------params------------------------------------
 batch_size = 1
