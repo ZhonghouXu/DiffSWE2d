@@ -9,11 +9,8 @@ from .io_netcdf import (
     load_dem_and_roughness_to_grid,
     load_rainfall_to_grid,
 )
-from .io_ascii import (
-    ModelGrid,
-    ascii_to_tensor,
-    parse_model_grid,
-)
+from .io_ascii import ascii_to_tensor, parse_model_grid
+#from .io_ascii import ModelGrid as AsciiModelGrid
 
 from .reconstruction import bflood_cn_reconstruction
 from .riemann import bflood_hllc_flux
@@ -193,11 +190,10 @@ class SWE2D(nn.Module):
         **model_kwargs
             Additional arguments passed to the normal SWE2D constructor.
         """
-        from .io_ascii import ascii_to_tensor, parse_model_grid
 
         grid = parse_model_grid(model_grid)
 
-        bed, grid = ascii_to_tensor(
+        bed, grid_spec = ascii_to_tensor(
             dem_path,
             grid,
             method=dem_method,
@@ -212,10 +208,28 @@ class SWE2D(nn.Module):
                 "The regridded bed contains NaN or infinite values."
             )
 
+        # create the roughness
+        if roughness_path is not None:
+            roughness_length, _ = ascii_to_tensor(
+                roughness_path,
+                grid,
+                method=roughness_method,
+                outside_domain=roughness_outside_domain,
+                fill_internal_nodata=fill_roughness_nodata,
+                device=device,
+                dtype=dtype,)
+        elif default_roughness is not None:
+            roughness_length = torch.full_like(bed, fill_value=float(default_roughness))
+        else:
+            # Provide a fallback if no roughness is specified at all
+            roughness_length = torch.full_like(bed, fill_value=0.03)
+
         # Construct the normal SWE2D model.
         model = cls(
-            bed=bed,
-            resolution=grid_spec.resolution,
+            bed_reference=bed,
+            roughness_length=roughness_length,
+            dx=grid_spec.resolution,
+            dy=grid_spec.resolution,
             config=config,
             **model_kwargs,
         )
@@ -230,46 +244,7 @@ class SWE2D(nn.Module):
         model.train_dem = bool(train_dem)
         model.maximum_dem_correction = maximum_dem_correction
 
-        # Optional roughness raster.
-        if roughness_path is not None:
-            roughness, _ = ascii_to_tensor(
-                roughness_path,
-                grid,
-                method=roughness_method,
-                outside_domain=roughness_outside_domain,
-                fill_internal_nodata=fill_roughness_nodata,
-                device=device,
-                dtype=dtype,
-            )
-
-            if not torch.isfinite(roughness).all():
-                raise ValueError(
-                    "The regridded roughness contains NaN or infinite values."
-                )
-
-        elif default_roughness is not None:
-            roughness = torch.full_like(
-                bed,
-                fill_value=float(default_roughness),
-            )
-
-        if roughness is not None:
-            if roughness.shape != bed.shape:
-                raise RuntimeError(
-                    f"Roughness shape {roughness.shape} does not match "
-                    f"bed shape {bed.shape}."
-                )
-
-            if torch.any(roughness < 0.0):
-                raise ValueError(
-                    "Roughness contains negative values."
-                )
-
-            # IMPORTANT:
-            # Change this name if SWE2D uses `manning`, `manning_n`,
-            # `friction`, or another internal variable.
-            model.roughness = roughness
-
+        
         # Optional trainable bed.
         #
         # This assumes model.bed is the bed used by the SWE2D solver.
@@ -324,7 +299,16 @@ class SWE2D(nn.Module):
         c = self.cfg
         batch, _, ny, nx = U.shape
         bed = self._expand(self.bed, batch)
-        Up, zp = add_ghost_cells(U, bed, ng=2, boundary=c.boundary)
+        Up, zp = add_ghost_cells(
+            U, 
+            bed, 
+            ng=2, 
+            boundary_left=c.boundary_left,
+            boundary_right=c.boundary_right,
+            boundary_top=c.boundary_top,
+            boundary_bottom=c.boundary_bottom
+            constant_value=c.constant_value
+        )
         args = (c.gravity, c.epsilon, c.dry_depth,
                 c.limiter_theta, c.water_slope_reset)
         ULx, URx, sxL, sxR = bflood_cn_reconstruction(Up, zp, -1, *args)
@@ -429,3 +413,4 @@ class SWE2D(nn.Module):
         dyy = dy[..., 1:, :] - dy[..., :-1, :]
         curvature = dxx.square().mean() + dyy.square().mean()
         return prior_weight * prior + slope_weight * slope + curvature_weight * curvature
+    

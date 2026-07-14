@@ -42,7 +42,7 @@ class ModelGrid:
             raise ValueError("The SWE solver requires a uniform model y grid")
         if not np.isclose(dx, dy, rtol=1e-8, atol=max(1e-10, dx*1e-10)):
             raise ValueError("The simplified model grid requires dx == dy")
-        return cls(x=x, y=y, dx=dx, dy=dx)
+        return cls(x=x, y=y, dx=dx, dy=dy)
 
     @classmethod
     def from_bounds(cls, xmin, xmax, ymin, ymax, resolution,

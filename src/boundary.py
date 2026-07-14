@@ -1,66 +1,86 @@
+import torch
 import torch.nn.functional as F
 
-
-def add_ghost_cells(U, bed, ng: int, boundary: str, constant_value: float = 0.0, constant_level: float = 0.0):
-    """Pad state and bed with ghost cells.
-
-    U has channels [h, hu, hv]. A wall reverses only the momentum normal to the
-    wall. A transmissive boundary copies the nearest interior cell.
+def add_ghost_cells(
+    U, 
+    bed, 
+    ng: int, 
+    boundary_left: str = "transmissive", 
+    boundary_right: str = "transmissive", 
+    boundary_top: str = "transmissive", 
+    boundary_bottom: str = "transmissive",
+    constant_value: float = 0.0, 
+    constant_level: float = 0.0
+):
     """
-    if boundary == "periodic":
-        return (
-            F.pad(U, (ng, ng, ng, ng), mode="circular"),
-            F.pad(bed, (ng, ng, ng, ng), mode="circular"),
-        )
+    Pad state and bed with ghost cells independently for each boundary.
+    U has channels [h, hu, hv]. 
+    """
     
-    if boundary == "constant":
-        return (
-            # Pad the fluid state (U) with the specified constant value
-            F.pad(U, (ng, ng, ng, ng), mode="constant", value=constant_value),
-            # Replicate the bed so you don't create an artificial cliff at the edge
-            F.pad(bed, (ng, ng, ng, ng), mode="replicate"),
-        )
-    
-    if boundary == "water_level":
-        # Replicate both U and bed so water can flow freely out (transmissive momentum)
-        Up = F.pad(U, (ng, ng, ng, ng), mode="replicate")
-        zp = F.pad(bed, (ng, ng, ng, ng), mode="replicate")
-        
-        # Calculate the required water depth to force the surface to 'constant_level'
-        # Formula: h = Z - bed. We clamp to 0.0 so we don't get negative water depths.
-        forced_h = torch.clamp(constant_level - zp, min=0.0)
-        
-        # Overwrite only the water depth (channel 0) in the ghost cell regions
-        # Left and Right edges
+    # 1. Base Padding (Allocate Space)
+    # We use "replicate" (transmissive) as the baseline for all sides. 
+    # This automatically handles any boundary set to "transmissive" and prepares the bed topology.
+    Up = F.pad(U, (ng, ng, ng, ng), mode="replicate")
+    zp = F.pad(bed, (ng, ng, ng, ng), mode="replicate")
+
+    # Pre-calculate forced_h in case any boundary is set to "water_level"
+    # Formula: h = Z - bed. Clamp to 0.0 to prevent negative water depths.
+    forced_h = torch.clamp(constant_level - zp, min=0.0)
+
+    # ---------------------------------------------------------
+    # --- LEFT BOUNDARY (x = 0 to ng) ---
+    # ---------------------------------------------------------
+    if boundary_left == "periodic":
+        Up[:, :, :, :ng] = U[:, :, :, -ng:]
+        zp[:, :, :, :ng] = bed[:, :, :, -ng:]
+    elif boundary_left == "constant":
+        Up[:, :, :, :ng] = constant_value
+    elif boundary_left == "water_level":
         Up[:, 0, :, :ng] = forced_h[:, 0, :, :ng]
-        Up[:, 0, :, -ng:] = forced_h[:, 0, :, -ng:]
-        # Top and Bottom edges
-        Up[:, 0, :ng, :] = forced_h[:, 0, :ng, :]
-        Up[:, 0, -ng:, :] = forced_h[:, 0, -ng:, :]
-        
-        return Up, zp
-    
-    if boundary == "transmissive":
-        return (
-            F.pad(U, (ng, ng, ng, ng), mode="replicate"),
-            F.pad(bed, (ng, ng, ng, ng), mode="replicate"),
-        )  
-
-    if boundary == "wall":
-        Up = Up.clone()
-        # Left/right walls: reverse x-momentum hu.
+    elif boundary_left == "wall":
+        # Reverse x-momentum (channel 1)
         Up[:, 1, :, :ng] = -Up[:, 1, :, ng:2 * ng].flip(-1)
-        Up[:, 1, :, -ng:] = -Up[:, 1, :, -2 * ng:-ng].flip(-1)
-        # Bottom/top walls: reverse y-momentum hv.
-        Up[:, 2, :ng, :] = -Up[:, 2, ng:2 * ng, :].flip(-2)
-        Up[:, 2, -ng:, :] = -Up[:, 2, -2 * ng:-ng, :].flip(-2)
-        zp = F.pad(bed, (ng, ng, ng, ng), mode="replicate")
-        return Up, zp
 
-    if boundary not in ("periodic", "constant", "water_level", "transmissive", "wall"):
-        raise ValueError(f"Unsupported boundary type: {boundary!r}")
-        # default boundary is "transmissive" if not defined
-        return (
-            F.pad(U, (ng, ng, ng, ng), mode="replicate"),
-            F.pad(bed, (ng, ng, ng, ng), mode="replicate"),
-        )   
+    # ---------------------------------------------------------
+    # --- RIGHT BOUNDARY (x = -ng to end) ---
+    # ---------------------------------------------------------
+    if boundary_right == "periodic":
+        Up[:, :, :, -ng:] = U[:, :, :, :ng]
+        zp[:, :, :, -ng:] = bed[:, :, :, :ng]
+    elif boundary_right == "constant":
+        Up[:, :, :, -ng:] = constant_value
+    elif boundary_right == "water_level":
+        Up[:, 0, :, -ng:] = forced_h[:, 0, :, -ng:]
+    elif boundary_right == "wall":
+        # Reverse x-momentum (channel 1)
+        Up[:, 1, :, -ng:] = -Up[:, 1, :, -2 * ng:-ng].flip(-1)
+
+    # ---------------------------------------------------------
+    # --- TOP BOUNDARY (y = 0 to ng) ---
+    # ---------------------------------------------------------
+    if boundary_top == "periodic":
+        Up[:, :, :ng, :] = U[:, :, -ng:, :]
+        zp[:, :, :ng, :] = bed[:, :, -ng:, :]
+    elif boundary_top == "constant":
+        Up[:, :, :ng, :] = constant_value
+    elif boundary_top == "water_level":
+        Up[:, 0, :ng, :] = forced_h[:, 0, :ng, :]
+    elif boundary_top == "wall":
+        # Reverse y-momentum (channel 2)
+        Up[:, 2, :ng, :] = -Up[:, 2, ng:2 * ng, :].flip(-2)
+
+    # ---------------------------------------------------------
+    # --- BOTTOM BOUNDARY (y = -ng to end) ---
+    # ---------------------------------------------------------
+    if boundary_bottom == "periodic":
+        Up[:, :, -ng:, :] = U[:, :, :ng, :]
+        zp[:, :, -ng:, :] = bed[:, :, :ng, :]
+    elif boundary_bottom == "constant":
+        Up[:, :, -ng:, :] = constant_value
+    elif boundary_bottom == "water_level":
+        Up[:, 0, -ng:, :] = forced_h[:, 0, -ng:, :]
+    elif boundary_bottom == "wall":
+        # Reverse y-momentum (channel 2)
+        Up[:, 2, -ng:, :] = -Up[:, 2, -2 * ng:-ng, :].flip(-2)
+
+    return Up, zp

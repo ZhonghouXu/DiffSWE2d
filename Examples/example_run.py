@@ -1,6 +1,7 @@
 """Run on a square-cell custom grid with conservative rainfall remapping."""
 import torch
 from diffswe2d import SWE2D, SWEConfig, ModelGrid, io_ascii
+from diffswe2d.io_ascii import ascii_to_tensor, load_rainfall_txt
 import xarray as xr
 import numpy as np
 
@@ -33,7 +34,12 @@ if dem_filepath.endswith('.nc'):
         roughness_variable="z0",
         rainfall_variable="rainfall",
         rainfall_units="mm/h",
-        config=SWEConfig(rainfall_outside_domain="zero"),
+        config=SWEConfig(
+            boundary_left="transmissive",
+            boundary_right="wall",
+            boundary_top="wall",
+            boundary_bottom="water_level"
+            ),
         dem_method="linear",
         roughness_method="linear",
         dem_outside_domain="error",
@@ -57,10 +63,15 @@ elif dem_filepath.endswith('.asc'):
     )
      
     model = SWE2D.from_ascii(
-        dem_path=bed_tensor,
+        dem_path=dem_filepath,
         roughness_path="roughness.asc", # default_roughness=0.03, # a uniform roughness
         model_grid=model_grid,
-        config=SWEConfig(rainfall_outside_domain="zero"),
+        config=SWEConfig(
+            boundary_left="transmissive",
+            boundary_right="wall",
+            boundary_top="wall",
+            boundary_bottom="water_level"
+            ),
         dem_method="linear",
         roughness_method="nearest",
         dem_outside_domain="error",
@@ -70,7 +81,7 @@ elif dem_filepath.endswith('.asc'):
         train_dem=False,
         maximum_dem_correction=1.0,
         device=device,
-        dtype=torch.float32,
+        dtype=torch.float64,
     ).to(device)
     
     # Load the text rainfall
@@ -143,14 +154,14 @@ with torch.inference_mode():
             U[:, 0, :, :] += (current_rain * dt_out)
 
         # Step the physics model forward by dt_out. note t_end in model is the duration of each run
-        result, hmax_tensor = model(U, t_end=dt_out, start_time=t)
+        U, hmax_tensor = model(U, t_end=dt_out, start_time=t)
         t += dt_out
         
-    #result, hmax_tensor  = U # Save final state
+    #U, hmax_tensor  = U # Save final state
 
 # Output section-------------------------------------------------
 print("cells:",ny,nx,"square resolution:",model.dx)
-print("depth range:",float(result[:,0].min()),float(result[:,0].max()))
+print("depth range:",float(U[:,0].min()),float(U[:,0].max()))
 # --- Save Time Series to TXT files ---
 for i in range(len(gauge_coords)):
     # Combine the time list with this specific gauge's h and z lists
