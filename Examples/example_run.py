@@ -13,6 +13,8 @@ device="cuda" if torch.cuda.is_available() else "cpu"
 # The script will automatically adapt based on the extension you type here!
 dem_filepath = "my_topography.asc"  # Change this to .nc to use the NetCDF method
 rain_filepath = "my_rainfall.txt"
+roughness_filepath = "my_manning_grid.asc"
+roughness_var = "n"
 
 # Set boundary conditions here
 bnd_left = "transmissive"
@@ -42,8 +44,10 @@ model, use_txt_rainfall, rain_times, rain_amounts = load_dynamic_model(
     boundary_left=bnd_left,
     boundary_right=bnd_right,
     boundary_top=bnd_top,
-    boundary_bottom=bnd_bottom
-    frictionmodel=frictionmodel
+    boundary_bottom=bnd_bottom,
+    frictionmodel=frictionmodel,
+    roughness_filepath=roughness_filepath
+    roughness_var_name=roughness_var
 )
 
 #--------params------------------------------------

@@ -11,7 +11,10 @@ def load_dynamic_model(
     boundary_right="wall",
     boundary_top="wall",
     boundary_bottom="water_level",
-    frictionmodel = "manning"
+    frictionmodel = "manning",
+    roughness_filepath=None,
+    roughness_var_name="z0",
+    default_roughness_value=0.025
 ):
     """
     Dynamically loads the SWE2D model based on the DEM file extension
@@ -22,12 +25,20 @@ def load_dynamic_model(
     
     if dem_filepath.endswith('.nc'):
         print(f"Loading DEM from NetCDF: {dem_filepath}")
+        # --- Dynamically set roughness arguments ---
+        roughness_kwargs = {}
+        if roughness_filepath:
+            roughness_kwargs["roughness_path"] = roughness_filepath
+            roughness_kwargs["roughness_variable"] = roughness_var_name
+        else:
+            roughness_kwargs["default_roughness"] = default_roughness_value
+
         model = SWE2D.from_netcdf(
             dem_filepath, 
             rainfall_path=rain_filepath,
             model_grid=model_grid,
             dem_variable="elevation",
-            roughness_variable="z0",
+            roughness_variable=roughness_var_name,
             rainfall_variable="rainfall",
             rainfall_units="mm/h",
             config=SWEConfig(
@@ -41,13 +52,22 @@ def load_dynamic_model(
             roughness_method="linear",
             dem_outside_domain="error",
             train_dem=False,
-            maximum_dem_correction=1.0
+            maximum_dem_correction=1.0,
+            **roughness_kwargs
         ).to(device)
         
         use_txt_rainfall = False
 
     elif dem_filepath.endswith('.asc'):
         print(f"Loading DEM from ASCII: {dem_filepath}")
+
+        # --- Dynamically set roughness arguments ---
+        roughness_kwargs = {}
+        if roughness_filepath:
+            roughness_kwargs["roughness_path"] = roughness_filepath
+        else:
+            roughness_kwargs["default_roughness"] = default_roughness_value
+
         bed_tensor, grid_spec = ascii_to_tensor(
             filepath=dem_filepath,
             model_grid=model_grid,
@@ -60,7 +80,6 @@ def load_dynamic_model(
          
         model = SWE2D.from_ascii(
             dem_path=dem_filepath,
-            roughness_path="roughness.asc", 
             model_grid=model_grid,
             config=SWEConfig(
                 boundary_left=boundary_left,
@@ -79,6 +98,7 @@ def load_dynamic_model(
             maximum_dem_correction=1.0,
             device=device,
             dtype=torch.float64,
+            **roughness_kwargs
         ).to(device)
         
         # Load the text rainfall
