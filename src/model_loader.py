@@ -10,7 +10,8 @@ def load_dynamic_model(
     boundary_left="transmissive",
     boundary_right="wall",
     boundary_top="wall",
-    boundary_bottom="water_level"
+    boundary_bottom="water_level",
+    frictionmodel = "manning"
 ):
     """
     Dynamically loads the SWE2D model based on the DEM file extension
@@ -23,7 +24,7 @@ def load_dynamic_model(
         print(f"Loading DEM from NetCDF: {dem_filepath}")
         model = SWE2D.from_netcdf(
             dem_filepath, 
-            rainfall_path="rainfall.nc",
+            rainfall_path=rain_filepath,
             model_grid=model_grid,
             dem_variable="elevation",
             roughness_variable="z0",
@@ -33,7 +34,8 @@ def load_dynamic_model(
                 boundary_left=boundary_left,
                 boundary_right=boundary_right,
                 boundary_top=boundary_top,
-                boundary_bottom=boundary_bottom
+                boundary_bottom=boundary_bottom,
+                frictionmodel = frictionmodel
             ),
             dem_method="linear",
             roughness_method="linear",
@@ -64,7 +66,8 @@ def load_dynamic_model(
                 boundary_left=boundary_left,
                 boundary_right=boundary_right,
                 boundary_top=boundary_top,
-                boundary_bottom=boundary_bottom
+                boundary_bottom=boundary_bottom,
+                frictionmodel = frictionmodel
             ),
             dem_method="linear",
             roughness_method="nearest",

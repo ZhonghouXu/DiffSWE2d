@@ -3,7 +3,7 @@ import torch
 import torch.nn as nn
 from .boundary import add_ghost_cells
 from .config import SWEConfig
-from .friction import apply_roughness_length_friction
+from .friction import apply_roughness_length_friction, apply_manning_friction
 from .io_netcdf import (
     ModelGrid,
     load_dem_and_roughness_to_grid,
@@ -378,10 +378,17 @@ class SWE2D(nn.Module):
         updated = self._clean_and_limit(U, U + dt * k2)
 
         if self.cfg.apply_friction:
-            updated = apply_roughness_length_friction(
-                updated, self._expand(self.roughness_length, U.shape[0]), dt,
-                dry_depth=self.cfg.dry_depth, epsilon=self.cfg.epsilon,
-            )
+            roughness_tensor = self._expand(self.roughness_length, U.shape[0])
+            if self.cfg.friction_model == "manning":
+                updated = apply_manning_friction(
+                    updated, roughness_tensor, dt, 
+                    dry_depth=self.cfg.dry_depth, epsilon=self.cfg.epsilon,
+                )
+            else:
+                updated = apply_roughness_length_friction(
+                    updated, self._expand(self.roughness_length, U.shape[0]), dt,
+                    dry_depth=self.cfg.dry_depth, epsilon=self.cfg.epsilon,
+                )
         return updated
 
     def forward(self, U0, t_end, start_time=0.0, max_steps=100000,

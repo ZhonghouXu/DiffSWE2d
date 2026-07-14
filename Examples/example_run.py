@@ -20,6 +20,9 @@ bnd_right = "wall"
 bnd_top = "wall"
 bnd_bottom = "water_level"
 
+# Select friction model ("roughness_length", "manning")
+frictionmodel = "manning"
+
 # model domain
 model_grid=ModelGrid.from_bounds(
     xmin=0.,
@@ -40,6 +43,7 @@ model, use_txt_rainfall, rain_times, rain_amounts = load_dynamic_model(
     boundary_right=bnd_right,
     boundary_top=bnd_top,
     boundary_bottom=bnd_bottom
+    frictionmodel=frictionmodel
 )
 
 #--------params------------------------------------
