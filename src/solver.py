@@ -9,6 +9,12 @@ from .io_netcdf import (
     load_dem_and_roughness_to_grid,
     load_rainfall_to_grid,
 )
+from .io_ascii import (
+    ModelGrid,
+    ascii_to_tensor,
+    parse_model_grid,
+)
+
 from .reconstruction import bflood_cn_reconstruction
 from .riemann import bflood_hllc_flux
 
@@ -96,6 +102,217 @@ class SWE2D(nn.Module):
             maximum_dem_correction=maximum_dem_correction,
             valid_mask=grid.valid_mask, x=grid.x, y=grid.y,
             rainfall=rainfall)
+
+    @classmethod
+    def from_ascii(
+        cls,
+        dem_path,
+        *,
+        model_grid,
+        roughness_path=None,
+        config=None,
+        dem_method="linear",
+        roughness_method="nearest",
+        dem_outside_domain="error",
+        roughness_outside_domain="error",
+        fill_dem_nodata=True,
+        fill_roughness_nodata=True,
+        default_roughness=None,
+        train_dem=False,
+        maximum_dem_correction=None,
+        device=None,
+        dtype=torch.float32,
+        **model_kwargs,
+    ):
+        """
+        Construct an SWE2D model from ESRI ASCII rasters.
+
+        Parameters
+        ----------
+        dem_path : str or Path
+            ESRI ASCII file containing bed elevation.
+
+        model_grid : ModelGrid or mapping
+            Target computational grid. Dictionary form:
+
+            {
+                "xmin": float,
+                "xmax": float,
+                "ymin": float,
+                "ymax": float,
+                "resolution": float,
+            }
+
+            Bounds are interpreted as model-domain outer edges.
+
+        roughness_path : str or Path, optional
+            ESRI ASCII roughness raster. It is interpolated onto the same
+            model grid as the DEM.
+
+        config : SWEConfig, optional
+            SWE2D configuration.
+
+        dem_method : {"linear", "nearest"}
+            DEM interpolation method.
+
+        roughness_method : {"linear", "nearest"}
+            Roughness interpolation method.
+
+        dem_outside_domain : {"error", "nearest", "nan"}
+            DEM behaviour outside the source ASCII raster.
+
+        roughness_outside_domain : {"error", "nearest", "nan"}
+            Roughness behaviour outside its source ASCII raster.
+
+        fill_dem_nodata : bool
+            Fill internal DEM NoData cells with nearest valid values.
+
+        fill_roughness_nodata : bool
+            Fill internal roughness NoData cells with nearest valid values.
+
+        default_roughness : float, optional
+            Uniform roughness value used if roughness_path is not supplied.
+
+        train_dem : bool
+            If True, make the model bed trainable.
+
+            This assumes that ``model.bed`` is the tensor/parameter used by
+            the solver. Adjust this block if the package uses another name.
+
+        maximum_dem_correction : float, optional
+            Metadata describing the maximum permitted DEM correction.
+            The actual enforcement must exist in the SWE2D forward model or
+            its bed-correction parameterisation.
+
+        device : str or torch.device, optional
+            Device on which tensors are initially created.
+
+        dtype : torch.dtype
+            Tensor dtype.
+
+        **model_kwargs
+            Additional arguments passed to the normal SWE2D constructor.
+        """
+        from .io_ascii import ascii_to_tensor, parse_model_grid
+
+        grid = parse_model_grid(model_grid)
+
+        bed, grid = ascii_to_tensor(
+            dem_path,
+            grid,
+            method=dem_method,
+            outside_domain=dem_outside_domain,
+            fill_internal_nodata=fill_dem_nodata,
+            device=device,
+            dtype=dtype,
+        )
+
+        if not torch.isfinite(bed).all():
+            raise ValueError(
+                "The regridded bed contains NaN or infinite values."
+            )
+
+        # Construct the normal SWE2D model.
+        model = cls(
+            bed=bed,
+            resolution=grid_spec.resolution,
+            config=config,
+            **model_kwargs,
+        )
+
+        # Retain the original library ModelGrid. This is preferable because
+        # it preserves dtype, device, coordinates, and package-specific functionality
+        model.model_grid = model_grid
+        # Retain the CPU/NumPy-compatible grid used by io_ascii.py.
+        model.grid_spec = grid_spec
+
+        model.dem_path = str(dem_path)
+        model.train_dem = bool(train_dem)
+        model.maximum_dem_correction = maximum_dem_correction
+
+        # Optional roughness raster.
+        if roughness_path is not None:
+            roughness, _ = ascii_to_tensor(
+                roughness_path,
+                grid,
+                method=roughness_method,
+                outside_domain=roughness_outside_domain,
+                fill_internal_nodata=fill_roughness_nodata,
+                device=device,
+                dtype=dtype,
+            )
+
+            if not torch.isfinite(roughness).all():
+                raise ValueError(
+                    "The regridded roughness contains NaN or infinite values."
+                )
+
+        elif default_roughness is not None:
+            roughness = torch.full_like(
+                bed,
+                fill_value=float(default_roughness),
+            )
+
+        if roughness is not None:
+            if roughness.shape != bed.shape:
+                raise RuntimeError(
+                    f"Roughness shape {roughness.shape} does not match "
+                    f"bed shape {bed.shape}."
+                )
+
+            if torch.any(roughness < 0.0):
+                raise ValueError(
+                    "Roughness contains negative values."
+                )
+
+            # IMPORTANT:
+            # Change this name if SWE2D uses `manning`, `manning_n`,
+            # `friction`, or another internal variable.
+            model.roughness = roughness
+
+        # Optional trainable bed.
+        #
+        # This assumes model.bed is the bed used by the SWE2D solver.
+        # If bed is registered as a buffer internally, replacing it with a
+        # Parameter may require removing the buffer first.
+        if train_dem:
+            if not hasattr(model, "bed"):
+                raise AttributeError(
+                    "train_dem=True was requested, but the SWE2D model does "
+                    "not expose a 'bed' attribute. Update from_ascii() to use "
+                    "the actual bed attribute employed by the solver."
+                )
+
+            current_bed = model.bed.detach().clone()
+
+            # If bed is already registered as a buffer, remove it before
+            # assigning a trainable Parameter.
+            if hasattr(model, "_buffers") and "bed" in model._buffers:
+                del model._buffers["bed"]
+
+            model.bed = torch.nn.Parameter(
+                current_bed,
+                requires_grad=True,
+            )
+
+        model.train_dem = bool(train_dem)
+        model.maximum_dem_correction = maximum_dem_correction
+
+        # Store source metadata for reproducibility.
+        model.dem_path = str(dem_path)
+
+        model.roughness_path = (
+            None
+            if roughness_path is None
+            else str(roughness_path)
+        )
+
+        model.dem_interpolation_method = dem_method
+        model.roughness_interpolation_method = roughness_method
+        model.dem_outside_domain = dem_outside_domain
+        model.roughness_outside_domain = roughness_outside_domain
+
+        return model
 
     @staticmethod
     def _expand(field, batch):

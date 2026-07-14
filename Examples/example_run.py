@@ -46,12 +46,31 @@ if dem_filepath.endswith('.nc'):
 
 elif dem_filepath.endswith('.asc'):
     print(f"Loading DEM from ASCII: {dem_filepath}")
-    bed_tensor, dem_header = load_asc_dem(dem_filepath, device=device)
-    
-    model = SWE2D(
-        bed=bed_tensor,
-        resolution=dem_header['cellsize'],
+    bed_tensor, grid_spec = ascii_to_tensor(
+        filepath=dem_filepath,
+        model_grid=model_grid,
+        method="linear",
+        outside_domain="error",
+        fill_internal_nodata=True,
+        dtype=torch.float64,
+        device=device,
+    )
+     
+    model = SWE2D.from_ascii(
+        dem_path=bed_tensor,
+        roughness_path="roughness.asc", # default_roughness=0.03, # a uniform roughness
+        model_grid=model_grid,
         config=SWEConfig(rainfall_outside_domain="zero"),
+        dem_method="linear",
+        roughness_method="nearest",
+        dem_outside_domain="error",
+        roughness_outside_domain="nearest",
+        fill_dem_nodata=True,
+        fill_roughness_nodata=True,
+        train_dem=False,
+        maximum_dem_correction=1.0,
+        device=device,
+        dtype=torch.float32,
     ).to(device)
     
     # Load the text rainfall
