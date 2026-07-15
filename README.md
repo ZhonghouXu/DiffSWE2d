@@ -1,4 +1,4 @@
-# diffswe2d
+# DiffSWE2d
 
 A PyTorch-based, piecewise-differentiable two-dimensional shallow-water
 equations solver for flood simulation and DEM inversion. The solver uses a
@@ -6,7 +6,7 @@ structured square-cell model grid and Basilisk B-Flood/BG-Flood style finite-vol
 
 ## Overview
 
-**diffswe2d** implements a vectorized 2-D shallow-water solver
+**DiffSWE2d** implements a vectorized 2-D shallow-water solver
 on a uniform Cartesian grid with square cells (`dx == dy`). It is compatible
 with PyTorch automatic differentiation and can run on either CPUs or
 CUDA-capable GPUs.
@@ -40,19 +40,17 @@ before operational use.
 
 ### Bottom friction
 
-- **BG_Flood-style roughness-length friction**
-  - spatially varying roughness length `z0`
+- **BG_Flood-style roughness-length friction and Manning'n friction**
+  - spatially varying roughness length `z0` and Manning'n
   - roughness length read from the same NetCDF file and grid as the DEM
   - piecewise shallow and logarithmic-law drag-coefficient relations
   - semi-implicit velocity update
   - roughness length remains fixed during DEM inversion
 
-The current package does not implement Manning's `n` as an alternative
-friction model.
 
 ### Rainfall forcing
 
-- Rainfall read from a separate NetCDF file
+- Rainfall read from a separate NetCDF file or a txt file
 - Rainfall source grid may differ from both the DEM grid and model grid
 - Linear temporal interpolation between rainfall records
 - Predictor-stage rainfall evaluated at the beginning of each timestep
@@ -68,10 +66,10 @@ friction model.
 - Domain dimensions must be exactly divisible by the requested resolution
 - Model coordinates and input files must use the same projected CRS
 
-### NetCDF input
+### NetCDF and ASCII input
 
-- DEM and roughness length loaded from one NetCDF file
-- Rainfall loaded from a separate NetCDF file
+- DEM loaded from one NetCDF or ASCII file
+- Rainfall loaded from a separate NetCDF file or txt file
 - DEM and roughness must share coordinates, resolution, and extent
 - Rainfall may have different rows, columns, resolution, alignment, and extent
 - Linear DEM remapping to the model grid
@@ -104,37 +102,6 @@ The adaptive CFL timestep and resulting timestep count are intentionally
 detached from the autograd graph. Gradients therefore describe the discrete
 forward simulation for the selected timestep sequence, but do not include the
 derivative of timestep selection itself.
-
-## Conservative rainfall remapping
-
-Rainfall values are treated as cell-average intensities. For every target
-model cell \(T\),
-
-\[
-R_T =
-\frac{\sum_S R_S A_{S \cap T}}{A_T},
-\]
-
-where \(R_S\) is the source-cell rainfall rate and \(A_{S \cap T}\) is the
-overlap area between source cell \(S\) and target cell \(T\).
-
-This conserves
-
-\[
-\sum R A
-\]
-
-over the spatial overlap between the rainfall and model grids for each
-rainfall time record, up to floating-point precision.
-
-- If the model grid covers the complete rainfall grid, the total source
-  precipitation rate-volume is conserved.
-- If the model domain is smaller, rainfall outside the model domain is
-  intentionally excluded.
-- If the model domain is larger and `rainfall_outside_domain="zero"`,
-  uncovered model cells receive zero rainfall.
-- If `rainfall_outside_domain="error"`, loading fails when the model grid is
-  not fully covered by the rainfall grid.
 
 ## Core components
 
@@ -174,7 +141,7 @@ Defines the independent model grid:
 ### `RainfallForcing`
 
 Stores rainfall remapped to the model grid:
-
+- Rainfall is optional; simulations can be run with zero precipitation by setting the rainfall path to None.
 - rates with shape `[time, 1, ny, nx]`
 - units of metres per second
 - linear temporal interpolation
@@ -183,14 +150,13 @@ Stores rainfall remapped to the model grid:
 ## Scope and limitations
 
 The code is a research implementation rather than a validated operational
-flood model. Current limitations include:
+flood model for now. Current limitations include:
 
 - piecewise rather than globally smooth differentiation
 - uniform Cartesian square cells only
-- fixed roughness length during inversion
+- fixed roughness during inversion
 - no adaptive mesh refinement
-- no conservative DEM remapping
 - no CRS reprojection
-- no rainfall infiltration model beyond an optional prescribed rate
+- no rainfall infiltration model
 - no built-in uncertainty-quantification workflow
 - no demonstrated performance benchmark against B-Flood or BG_Flood
