@@ -1,10 +1,13 @@
-"""Run on a square-cell custom grid with conservative rainfall remapping."""
+"""Eaxmple run on a square-cell custom grid."""
 import torch
 from diffswe2d import SWE2D, SWEConfig, ModelGrid, io_ascii
 from diffswe2d.io_ascii import ascii_to_tensor, load_rainfall_txt
 from diffswe2d.model_loader import load_dynamic_model
+from diffswe2d.logger import setup_logger
 import xarray as xr
 import numpy as np
+import time
+from datetime import datetime
 
 torch.set_default_dtype(torch.float64)
 device="cuda" if torch.cuda.is_available() else "cpu"
@@ -93,6 +96,15 @@ model.eval()
 with torch.inference_mode():
     U = U0.clone()    
     # --- The Time Loop ---
+    # ---------------------------------------------------------
+    # START LOGGING & TIMERS
+    # ---------------------------------------------------------
+    logger = setup_logger("diffswe_run.log")
+    start_wall_time = time.time()
+    start_datetime = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    logger.info(f"=== Simulation Started at: {start_datetime} ===")
+    step_counter = 0
+
     while t <= t_end:
         times.append(t)
         
@@ -114,12 +126,19 @@ with torch.inference_mode():
         # Step the physics model forward by dt_out. note t_end in model is the duration of each run
         U, hmax_tensor = model(U, t_end=dt_out, start_time=t)
         t += dt_out
+
+        # ---------------------------------------------------------
+        # WRITE TO LOG (EVERY 60 STEPS)
+        # ---------------------------------------------------------
+        step_counter += 1
+        if step_counter % 60 == 0:
+            logger.info(f"Step: {step_counter:5d} | Sim Clock Time: {t:8.2f}s")
         
     #U, hmax_tensor  = U # Save final state
-
+    
 # Output section-------------------------------------------------
-print("cells:",ny,nx,"square resolution:",model.dx)
-print("depth range:",float(U[:,0].min()),float(U[:,0].max()))
+logger.info(f"cells: {ny}, {nx}, square resolution: {model.dx}")
+logger.info(f"depth range: {float(U[:,0].min())}, {float(U[:,0].max())}")
 # --- Save Time Series to TXT files ---
 for i in range(len(gauge_coords)):
     # Combine the time list with this specific gauge's h and z lists
@@ -139,7 +158,7 @@ for i in range(len(gauge_coords)):
         comments="" 
     )
 
-print(f"Successfully saved {len(gauge_coords)} gauge text files!")
+logger.info(f"Successfully saved {len(gauge_coords)} gauge text files!")
 
 
 # Output the maximum water depth to a NetCDF file
@@ -163,4 +182,16 @@ ds = xr.Dataset(
 
 # Save to NetCDF
 ds.to_netcdf("hmax.nc")
-print("Saved maximum water depth to hmax.nc")
+logger.info("Saved maximum water depth to hmax.nc")
+
+
+# ---------------------------------------------------------
+# END LOGGING & TIMERS
+# ---------------------------------------------------------
+end_wall_time = time.time()
+end_datetime = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+total_computational_time = end_wall_time - start_wall_time
+logger.info(f"=== Simulation Ended at: {end_datetime} ===")
+logger.info(f"Total Physical Time Simulated: {t:.2f} seconds")
+hours = total_computational_time/3600.0
+logger.info(f"Total Computational Time: {int(hours)}h")
