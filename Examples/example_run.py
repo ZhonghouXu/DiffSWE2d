@@ -46,7 +46,7 @@ model, use_txt_rainfall, rain_times, rain_amounts = load_dynamic_model(
     boundary_top=bnd_top,
     boundary_bottom=bnd_bottom,
     frictionmodel=frictionmodel,
-    roughness_filepath=roughness_filepath
+    roughness_filepath=roughness_filepath,
     roughness_var_name=roughness_var
 )
 

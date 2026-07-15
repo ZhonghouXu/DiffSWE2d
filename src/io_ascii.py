@@ -1430,6 +1430,7 @@ def read_ascii_native_tensor(
     return tensor, grid_spec
 
 
+
 # =============================================================================
 # Diagnostic functions
 # =============================================================================
@@ -1539,6 +1540,13 @@ def describe_model_grid(
     return grid.as_dict()
 
 
+def load_rainfall_txt(filepath):
+    """Reads rainfall txt (Col 1: Time, Col 2: Rain in mm) and converts to SI units."""
+    data = np.loadtxt(filepath)
+    times = data[:, 0]
+    rain_meters = data[:, 1] / 1000.0 
+    
+    return times, rain_meters
 # =============================================================================
 # Public exports
 # =============================================================================
@@ -1556,4 +1564,5 @@ __all__ = [
     "read_ascii_native_tensor",
     "read_ascii_on_grid",
     "regrid_ascii",
+    "load_rainfall_txt"
 ]
