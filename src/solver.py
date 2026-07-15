@@ -306,7 +306,7 @@ class SWE2D(nn.Module):
             boundary_left=c.boundary_left,
             boundary_right=c.boundary_right,
             boundary_top=c.boundary_top,
-            boundary_bottom=c.boundary_bottom
+            boundary_bottom=c.boundary_bottom,
             constant_value=c.constant_value
         )
         args = (c.gravity, c.epsilon, c.dry_depth,
@@ -379,7 +379,7 @@ class SWE2D(nn.Module):
 
         if self.cfg.apply_friction:
             roughness_tensor = self._expand(self.roughness_length, U.shape[0])
-            if self.cfg.friction_model == "manning":
+            if self.cfg.frictionmodel == "manning":
                 updated = apply_manning_friction(
                     updated, roughness_tensor, dt, 
                     dry_depth=self.cfg.dry_depth, epsilon=self.cfg.epsilon,
