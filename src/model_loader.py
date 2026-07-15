@@ -4,7 +4,7 @@ from diffswe2d.io_ascii import ascii_to_tensor, load_rainfall_txt
 
 def load_dynamic_model(
     dem_filepath, 
-    rain_filepath, 
+    rain_filepath=None, 
     model_grid, 
     device,
     boundary_left="transmissive",
@@ -33,6 +33,13 @@ def load_dynamic_model(
         else:
             roughness_kwargs["default_roughness"] = default_roughness_value
 
+        # --- Dynamically set rainfall arguments ---
+        rainfall_kwargs = {}
+        if rain_filepath:
+            rainfall_kwargs["rainfall_path"] = rain_filepath
+            rainfall_kwargs["rainfall_variable"] = "rainfall"
+            rainfall_kwargs["rainfall_units"] = "mm/h"
+
         model = SWE2D.from_netcdf(
             dem_filepath, 
             rainfall_path=rain_filepath,
@@ -53,7 +60,8 @@ def load_dynamic_model(
             dem_outside_domain="error",
             train_dem=False,
             maximum_dem_correction=1.0,
-            **roughness_kwargs
+            **roughness_kwargs,
+            **rainfall_kwargs
         ).to(device)
         
         use_txt_rainfall = False
@@ -101,9 +109,13 @@ def load_dynamic_model(
             **roughness_kwargs
         ).to(device)
         
-        # Load the text rainfall
-        rain_times, rain_amounts = load_rainfall_txt(rain_filepath)
-        use_txt_rainfall = True
+        # Load the text rainfall if provided
+        if rain_filepath:
+            rain_times, rain_amounts = load_rainfall_txt(rain_filepath)
+            use_txt_rainfall = True
+        else:
+            use_txt_rainfall = False
+            # rain_times and rain_amounts are already initialized to None at the top of the function
 
     else:
         raise ValueError("Unsupported DEM format! Please provide a .nc or .asc file.")

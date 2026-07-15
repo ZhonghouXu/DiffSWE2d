@@ -12,7 +12,7 @@ device="cuda" if torch.cuda.is_available() else "cpu"
 # --- Define your inputs here ---
 # The script will automatically adapt based on the extension you type here!
 dem_filepath = "my_topography.asc"  # Change this to .nc to use the NetCDF method
-rain_filepath = "my_rainfall.txt"
+rain_filepath = "my_rainfall.txt" # Choose None if no rain
 roughness_filepath = "my_manning_grid.asc"
 roughness_var = "n"
 
