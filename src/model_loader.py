@@ -1,12 +1,14 @@
 import torch
 from diffswe2d import SWE2D, SWEConfig
 from diffswe2d.io_ascii import ascii_to_tensor, load_rainfall_txt
+import numpy as np
 
 def load_dynamic_model(
     dem_filepath,     
     model_grid, 
     device,
     rain_filepath=None, 
+    tide_filepath=None,
     boundary_left="transmissive",
     boundary_right="wall",
     boundary_top="wall",
@@ -22,6 +24,7 @@ def load_dynamic_model(
     """
     # Initialize variables to None to ensure consistent returns
     rain_times, rain_rate_ms = None, None
+    use_txt_rainfall = False
     
     if dem_filepath.endswith('.nc'):
         print(f"Loading DEM from NetCDF: {dem_filepath}")
@@ -36,9 +39,14 @@ def load_dynamic_model(
         # --- Dynamically set rainfall arguments ---
         rainfall_kwargs = {}
         if rain_filepath:
-            rainfall_kwargs["rainfall_path"] = rain_filepath
-            rainfall_kwargs["rainfall_variable"] = "rainfall"
-            rainfall_kwargs["rainfall_units"] = "mm/h"
+            if rain_filepath.endswith('.nc'):
+                rainfall_kwargs["rainfall_path"] = rain_filepath
+                rainfall_kwargs["rainfall_variable"] = "rainfall"
+                rainfall_kwargs["rainfall_units"] = "mm/h"
+            elif rain_filepath.endswith('.txt'):
+                rain_times, rain_rate_ms = load_rainfall_txt(rain_filepath)
+                use_txt_rainfall = True
+
 
         model = SWE2D.from_netcdf(
             dem_filepath, 
@@ -60,8 +68,8 @@ def load_dynamic_model(
             **roughness_kwargs,
             **rainfall_kwargs
         ).to(device)
+
         
-        use_txt_rainfall = False
 
     elif dem_filepath.endswith('.asc'):
         print(f"Loading DEM from ASCII: {dem_filepath}")
@@ -105,16 +113,23 @@ def load_dynamic_model(
             dtype=torch.float64,
             **roughness_kwargs
         ).to(device)
-        
-        # Load the text rainfall if provided
+
+        # OPTIONAL TXT RAINFALL LOADER
         if rain_filepath:
             rain_times, rain_rate_ms = load_rainfall_txt(rain_filepath)
             use_txt_rainfall = True
-        else:
-            use_txt_rainfall = False
-            # rain_times and rain_amounts are already initialized to None at the top of the function
-
+           
     else:
         raise ValueError("Unsupported DEM format! Please provide a .nc or .asc file.")
-        
+
+    
+    # --- OPTIONAL TIDE LOADER ---
+    if tide_filepath:
+        tide_data = np.loadtxt(tide_filepath)
+        # Push to the target device immediately so interpolation during the loop is lightning fast
+        model.bc_times = torch.tensor(tide_data[:, 0], dtype=torch.float64, device=device)
+        model.bc_wls = torch.tensor(tide_data[:, 1], dtype=torch.float64, device=device)
+        model.use_dynamic_bc = True
+    # --------------------------------------
+    #     
     return model, use_txt_rainfall, rain_times, rain_rate_ms

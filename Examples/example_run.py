@@ -18,11 +18,12 @@ dem_filepath = "topo.asc"  # Change this to .nc to use the NetCDF method
 rain_filepath = "cstRain-test1.txt" # Choose None if no rain
 roughness_filepath = None
 roughness_var = None
+tide_filepath="tide_boundary.txt" # Optional
 
 # Set boundary conditions here: Options: "wall", "constant", "water_level", "transmissive", or "periodic"
-bnd_left = "transmissive"
-bnd_right = "transmissive"
-bnd_top = "transmissive"
+bnd_left = "wall"
+bnd_right = "wall"
+bnd_top = "wall"
 bnd_bottom = "transmissive"
 
 # Select friction model ("roughness_length", "manning")
@@ -31,10 +32,10 @@ default_roughness_value = 0.009 # not used if spatial roughness is provided
 
 # model domain
 model_grid=ModelGrid.from_bounds(
-    xmin=0.2,
+    xmin=0.02,
     xmax=2.02,
-    ymin=0.025,
-    ymax=2.525,
+    ymin=0.,
+    ymax=2.52,
     resolution=0.01,
     dtype=torch.float64,
     device=device)
@@ -52,7 +53,8 @@ model, use_txt_rainfall, rain_times, rain_rate_ms = load_dynamic_model(
     frictionmodel=frictionmodel,
     roughness_filepath=roughness_filepath,
     roughness_var_name=roughness_var,
-    default_roughness_value=default_roughness_value
+    default_roughness_value=default_roughness_value,
+    tide_filepath=tide_filepath
 )
 
 #--------params------------------------------------
@@ -131,8 +133,8 @@ with torch.inference_mode():
         # ---------------------------------------------------------
         # CALCULATE BOUNDARY DISCHARGE (RIGHT BOUNDARY)
         # ---------------------------------------------------------
-        # Extract 'hv' (index 2) for all 'x' cells along the first 'y' column (index 2)
-        hv_bottom = -U[0, 2, 0, :] 
+        # Extract 'hv' (index 2) for all 'x' cells along the fourth 'y' column (index 3)
+        hv_bottom = -U[0, 2, 3, :] 
         
         # Sum the unit discharges and multiply by cell width (dx) to get m³/s
         Q_right = torch.sum(hv_bottom).item() * model.dx
@@ -205,8 +207,8 @@ ds = xr.Dataset(
 )
 
 # Save to NetCDF
-ds.to_netcdf("hmax_test.nc")
-logger.info("Saved maximum water depth to hmax.nc")
+ds.to_netcdf("hmax_n_0009.nc")
+logger.info("Saved maximum water depth to netcdf file")
 
 
 # ---------------------------------------------------------

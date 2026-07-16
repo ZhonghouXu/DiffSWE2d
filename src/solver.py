@@ -48,6 +48,10 @@ class SWE2D(nn.Module):
             torch.zeros_like(bed_reference), requires_grad=train_dem
         )
         self.rainfall = rainfall  # RainfallForcing is an nn.Module and moves with .to().
+        # --- DYNAMIC BOUNDARIES ---
+        self.use_dynamic_bc = False
+        self.bc_times = None
+        self.bc_wls = None
 
     @property
     def bed(self):
@@ -399,7 +403,30 @@ class SWE2D(nn.Module):
         elapsed = 0.0
         for iteration in range(max_steps):
             if elapsed >= t_end - 1.0e-14:
-                return U, hmax
+                return U, hmax            
+            
+            # -------- STEP BOUNDARY INTERPOLATION ---------
+            current_time = start_time + elapsed
+            if self.use_dynamic_bc:
+                # Cast current_time to a tensor on the same device to keep math fast
+                ct_tensor = torch.tensor([current_time], dtype=torch.float64, device=self.bc_times.device)
+
+                # Find exactly where we are in the time series
+                idx = torch.searchsorted(self.bc_times, ct_tensor).item()
+                
+                if idx == 0:
+                    self.cfg.constant_level = self.bc_wls[0].item()
+                elif idx == len(self.bc_times):
+                    self.cfg.constant_level = self.bc_wls[-1].item()
+                else:
+                    # Linear interpolation on the GPU
+                    t0, t1 = self.bc_times[idx-1], self.bc_times[idx]
+                    w0, w1 = self.bc_wls[idx-1], self.bc_wls[idx]
+                    weight = (ct_tensor[0] - t0) / (t1 - t0)
+                    current_wl = w0 + weight * (w1 - w0)
+                    self.cfg.constant_level = current_wl.item()
+            # ----------------------------------------------
+            
             dt_value = min(float(self.stable_dt(U).detach()), t_end - elapsed)
             U = self.step(U, dt_value, start_time + elapsed, infiltration)
             hmax = torch.maximum(hmax, U[:, 0])
