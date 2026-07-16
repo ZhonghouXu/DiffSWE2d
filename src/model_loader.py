@@ -3,10 +3,10 @@ from diffswe2d import SWE2D, SWEConfig
 from diffswe2d.io_ascii import ascii_to_tensor, load_rainfall_txt
 
 def load_dynamic_model(
-    dem_filepath, 
-    rain_filepath=None, 
+    dem_filepath,     
     model_grid, 
     device,
+    rain_filepath=None, 
     boundary_left="transmissive",
     boundary_right="wall",
     boundary_top="wall",
@@ -21,7 +21,7 @@ def load_dynamic_model(
     and applies custom boundary conditions.
     """
     # Initialize variables to None to ensure consistent returns
-    rain_times, rain_amounts = None, None
+    rain_times, rain_rate_ms = None, None
     
     if dem_filepath.endswith('.nc'):
         print(f"Loading DEM from NetCDF: {dem_filepath}")
@@ -54,7 +54,7 @@ def load_dynamic_model(
             ),
             dem_method="linear",
             roughness_method="linear",
-            dem_outside_domain="error",
+            dem_outside_domain="nearest",
             train_dem=False,
             maximum_dem_correction=1.0,
             **roughness_kwargs,
@@ -77,7 +77,7 @@ def load_dynamic_model(
             filepath=dem_filepath,
             model_grid=model_grid,
             method="linear",
-            outside_domain="error",
+            outside_domain="nearest",
             fill_internal_nodata=True,
             dtype=torch.float64,
             device=device,
@@ -95,7 +95,7 @@ def load_dynamic_model(
             ),
             dem_method="linear",
             roughness_method="nearest",
-            dem_outside_domain="error",
+            dem_outside_domain="nearest",
             roughness_outside_domain="nearest",
             fill_dem_nodata=True,
             fill_roughness_nodata=True,
@@ -108,7 +108,7 @@ def load_dynamic_model(
         
         # Load the text rainfall if provided
         if rain_filepath:
-            rain_times, rain_amounts = load_rainfall_txt(rain_filepath)
+            rain_times, rain_rate_ms = load_rainfall_txt(rain_filepath)
             use_txt_rainfall = True
         else:
             use_txt_rainfall = False
@@ -117,4 +117,4 @@ def load_dynamic_model(
     else:
         raise ValueError("Unsupported DEM format! Please provide a .nc or .asc file.")
         
-    return model, use_txt_rainfall, rain_times, rain_amounts
+    return model, use_txt_rainfall, rain_times, rain_rate_ms

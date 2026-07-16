@@ -1544,9 +1544,10 @@ def load_rainfall_txt(filepath):
     """Reads rainfall txt (Col 1: Time, Col 2: Rain in mm) and converts to SI units."""
     data = np.loadtxt(filepath)
     times = data[:, 0]
-    rain_meters = data[:, 1] / 1000.0 
+    # Convert Column 2 from mm/h to m/s
+    rain_rate_ms = data[:, 1] / (1000.0 * 3600.0) 
     
-    return times, rain_meters
+    return times, rain_rate_ms
 # =============================================================================
 # Public exports
 # =============================================================================
