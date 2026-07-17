@@ -142,7 +142,7 @@ def _remap(da, grid: ModelGrid, x_name, y_name, method, outside, field_name):
 
 
 def load_dem_and_roughness_to_grid(path, model_grid: ModelGrid, dem_variable=None,
-                                    roughness_variable=None, x_name="x", y_name="y",
+                                    roughness_path=None, roughness_variable=None, x_name="x", y_name="y",
                                     dem_method="linear", roughness_method="linear",
                                     outside_domain="error", dtype=torch.float64, device=None):
     """Remap source DEM and z0 from one NetCDF file to the custom model grid.
@@ -153,21 +153,47 @@ def load_dem_and_roughness_to_grid(path, model_grid: ModelGrid, dem_variable=Non
     """
     with xr.open_dataset(Path(path),decode_cf=True,mask_and_scale=True) as ds:
         zn=_find_variable(ds,dem_variable,("zb","bed","bed_elevation","elevation","dem","z"))
-        rn=_find_variable(ds,roughness_variable,("roughness_length","roughness","z0","zo"))
         z=_ascending(ds[zn].squeeze(drop=True),x_name,y_name)
-        r=_ascending(ds[rn].squeeze(drop=True),x_name,y_name)
-        z,r=xr.align(z,r,join="exact")
-        if not np.isfinite(z.values).all(): raise ValueError("Source DEM contains missing values")
-        if not np.isfinite(r.values).all() or np.any(r.values<=0):
-            raise ValueError("Source roughness length must be finite and positive")
+        
+        if not np.isfinite(z.values).all():
+            raise ValueError("Source DEM contains missing values")
+            
         z_model=_remap(z,model_grid,x_name,y_name,dem_method,outside_domain,"DEM")
-        log_r=xr.apply_ufunc(np.log,r)
-        log_r_model=_remap(log_r,model_grid,x_name,y_name,roughness_method,outside_domain,"roughness")
-        r_model=np.exp(np.asarray(log_r_model.values,dtype=np.float64))
         z_values=np.asarray(z_model.values,dtype=np.float64)
+
+        # Try to extract a roughness map from a file
+        try:
+            # Decide which file to look inside
+            if roughness_path is not None:
+                ds_r = xr.open_dataset(Path(roughness_path), decode_cf=True, mask_and_scale=True)
+            else:
+                ds_r = ds # Fallback to looking in the DEM file
+
+            # Extract and align
+            rn = _find_variable(ds_r, roughness_variable, ("roughness_length", "roughness", "z0", "zo", "n"))
+            r = _ascending(ds_r[rn].squeeze(drop=True), x_name, y_name)
+            
+            if not np.isfinite(r.values).all() or np.any(r.values <= 0):
+                raise ValueError("Source roughness length must be finite and positive")
+                
+            # Process the roughness map
+            log_r = xr.apply_ufunc(np.log, r)
+            log_r_model = _remap(log_r, model_grid, x_name, y_name, roughness_method, outside_domain, "roughness")
+            r_model = np.exp(np.asarray(log_r_model.values, dtype=np.float64))
+            
+            # Clean up if we opened a separate file
+            if roughness_path is not None:
+                ds_r.close()
+            
+        except (KeyError, FileNotFoundError, OSError):
+            # If no roughness file exists, or the variable isn't found, create a dummy map. 
+            # solver.py will overwrite this later with default_roughness!
+            r_model = np.ones_like(z_values)
+
         valid=np.isfinite(z_values)&np.isfinite(r_model)
         if not valid.all(): raise ValueError("Model grid contains cells not covered by DEM/roughness")
         crs=_crs_text(ds,z)
+
     return GridData(torch.as_tensor(z_values,dtype=dtype,device=device),
         torch.as_tensor(r_model,dtype=dtype,device=device),model_grid.x,model_grid.y,
         model_grid.dx,model_grid.dy,torch.as_tensor(valid,dtype=torch.bool,device=device),crs)

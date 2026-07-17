@@ -51,8 +51,6 @@ def load_dynamic_model(
         model = SWE2D.from_netcdf(
             dem_filepath, 
             model_grid=model_grid,
-            dem_variable="elevation",
-            roughness_variable=roughness_var_name,
             config=SWEConfig(
                 boundary_left=boundary_left,
                 boundary_right=boundary_right,

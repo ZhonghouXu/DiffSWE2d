@@ -53,6 +53,15 @@ class SWE2D(nn.Module):
         self.bc_times = None
         self.bc_wls = None
 
+        # --- ADD THESE FOR MICRO-STEP GAUGE TRACKING ---
+        self.track_gauges = False
+        self.gauge_indices = {}      # {name: (iy, ix)}
+        self.bed_elevations = {}     # {name: z}        
+        self.ts_time = []
+        self.ts_dt = []
+        self.ts_h = {}               # {name: [h1, h2, ...]}
+        self.ts_z = {}               # {name: [z1, z2, ...]}
+
     @property
     def bed(self):
         """Current differentiable DEM used by reconstruction and source terms."""
@@ -65,11 +74,11 @@ class SWE2D(nn.Module):
         return self.bed_reference + correction * self.valid_mask
 
     @classmethod
-    def from_netcdf(cls, dem_path, rainfall_path, model_grid,
-                    dem_variable=None, roughness_variable=None,
+    def from_netcdf(cls, dem_path, model_grid, rainfall_path=None, 
+                    dem_variable=None, roughness_path=None, roughness_variable=None,
                     rainfall_variable=None, dem_x="x", dem_y="y",
                     rain_x="x", rain_y="y", rain_time="time",
-                    rainfall_units=None, dem_method="linear",
+                    rainfall_units=None, dem_method="linear",default_roughness=None,
                     roughness_method="linear", dem_outside_domain="error",
                     config=None, dtype=torch.float64, device=None,
                     train_dem=True, maximum_dem_correction=None):
@@ -86,19 +95,35 @@ class SWE2D(nn.Module):
         if not isinstance(model_grid, ModelGrid):
             raise TypeError("model_grid must be ModelGrid or a bounds dictionary")
         grid = load_dem_and_roughness_to_grid(
-            dem_path, model_grid, dem_variable, roughness_variable,
+            dem_path, model_grid, dem_variable, roughness_path=roughness_path, roughness_variable=roughness_variable,
             x_name=dem_x, y_name=dem_y, dem_method=dem_method,
             roughness_method=roughness_method,
             outside_domain=dem_outside_domain, dtype=dtype, device=device,
         )
-        rainfall = load_rainfall_to_grid(
-            rainfall_path, model_grid, variable=rainfall_variable,
-            time_name=rain_time, x_name=rain_x, y_name=rain_y,
-            units=rainfall_units,
-            outside_domain=cfg.rainfall_outside_domain,
-            expected_crs=grid.crs, dtype=dtype, device=device,
-        )
-        return cls(grid.bed, grid.roughness_length, grid.dx, grid.dy,
+        
+        # Only try to load the NetCDF rainfall if a path was actually provided
+        if rainfall_path is not None:
+            rainfall = load_rainfall_to_grid(
+                rainfall_path, model_grid, variable=rainfall_variable,
+                time_name=rain_time, x_name=rain_x, y_name=rain_y,
+                units=rainfall_units,
+                outside_domain=cfg.rainfall_outside_domain,
+                expected_crs=grid.crs, dtype=dtype, device=device,
+            )
+        else:
+            rainfall = None
+
+        # --- ROUGHNESS ---
+        if roughness_variable is not None:
+            rough_tensor = grid.roughness_length
+        elif default_roughness is not None:
+            rough_tensor = torch.full_like(grid.bed, fill_value=float(default_roughness))
+        else:
+            # Fallback to 0.03 if absolutely nothing is specified
+            rough_tensor = torch.full_like(grid.bed, fill_value=0.025)
+        # --------------------------------
+
+        return cls(grid.bed, rough_tensor, grid.dx, grid.dy,
             config=cfg, train_dem=train_dem,
             maximum_dem_correction=maximum_dem_correction,
             valid_mask=grid.valid_mask, x=grid.x, y=grid.y,
@@ -311,7 +336,8 @@ class SWE2D(nn.Module):
             boundary_right=c.boundary_right,
             boundary_top=c.boundary_top,
             boundary_bottom=c.boundary_bottom,
-            constant_value=c.constant_value
+            constant_value=c.constant_value,
+            constant_level=c.constant_level
         )
         args = (c.gravity, c.epsilon, c.dry_depth,
                 c.limiter_theta, c.water_slope_reset)
@@ -427,10 +453,23 @@ class SWE2D(nn.Module):
                     self.cfg.constant_level = current_wl.item()
             # ----------------------------------------------
             
-            dt_value = min(float(self.stable_dt(U).detach()), t_end - elapsed)
-            U = self.step(U, dt_value, start_time + elapsed, infiltration)
+            dt = min(float(self.stable_dt(U).detach()), t_end - elapsed)
+            U = self.step(U, dt, start_time + elapsed, infiltration)
             hmax = torch.maximum(hmax, U[:, 0])
-            elapsed += dt_value
+            elapsed += dt
+
+            # --- MICRO-STEP TRACKING FOR GAUGES---
+            if self.track_gauges:
+                self.ts_time.append(start_time + elapsed)
+                self.ts_dt.append(dt)
+                
+                # Loop through the dictionary of gauges
+                for name, (iy, ix) in self.gauge_indices.items():
+                    h_point = U[0, 0, iy, ix].item()
+                    self.ts_h[name].append(h_point)
+                    self.ts_z[name].append(h_point + self.bed_elevations[name])
+            # --------------------------------
+
             if callback is not None:
                 callback(iteration, start_time + elapsed, U)
         raise RuntimeError("max_steps reached before t_end")
