@@ -8,7 +8,7 @@ class SWEConfig:
     gravity: float = 9.81
     dry_depth: float = 1.0e-6
     epsilon: float = 1.0e-12
-    cfl: float = 0.35
+    cfl: float = 0.5
     limiter_theta: float = 1.3
     # Boundary options: "wall", "constant", "water_level", "transmissive", or "periodic"
     boundary_left: str = "water_level"   

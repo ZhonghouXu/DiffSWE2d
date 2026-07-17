@@ -15,6 +15,10 @@ from .io_ascii import ascii_to_tensor, parse_model_grid
 from .reconstruction import bflood_cn_reconstruction
 from .riemann import bflood_hllc_flux
 
+# Map scalar outputs automatically without breaking the graph
+import torch._dynamo
+torch._dynamo.config.capture_scalar_outputs = True
+
 
 class SWE2D(nn.Module):
     """Differentiable B-Flood-style 2-D SWE solver on the DEM grid."""
@@ -396,38 +400,50 @@ class SWE2D(nn.Module):
             torch.where(wet, candidate[:, 1:2], torch.zeros_like(h)),
             torch.where(wet, candidate[:, 2:3], torch.zeros_like(h))), dim=1)
 
-    def step(self, U, dt, model_time, infiltration=None):
-        """B-Flood midpoint predictor-corrector with stage-time rainfall."""
-        dt = torch.as_tensor(dt, dtype=U.dtype, device=U.device)
-        rain_n = None if self.rainfall is None else self.rainfall.at(model_time)
-        rain_half = None if self.rainfall is None else self.rainfall.at(model_time + 0.5 * dt)
+    def step(self, U, model_time, max_dt, infiltration=None):
+        """Midpoint predictor-corrector with stage-time rainfall."""
+        # Unpack the time tensor safely for the rainfall interpolator
+        t_float = model_time.item()
+        rain_n = None if self.rainfall is None else self.rainfall.at(t_float)
+        
+        # Compute k1 AND wave speeds at the exact same time (saves an entire calculation!)
+        k1, ax, ay = self.spatial_operator(U, rain_n, infiltration, return_wave_speed=True)
+        
+        # Calculate the stable dt using those speeds
+        dt_stable = self.cfg.cfl / torch.clamp(ax / self.dx + ay / self.dy, min=self.cfg.epsilon)
+        # Native PyTorch tensor minimum (max_dt is already a tensor now!)
+        dt_tensor = torch.minimum(dt_stable, max_dt)
+        dt_float = dt_tensor.item()
 
-        k1 = self.spatial_operator(U, rain_n, infiltration)
-        predictor = self._clean_and_limit(U, U + 0.5 * dt * k1)
+        rain_half = None if self.rainfall is None else self.rainfall.at(t_float + 0.5 * dt_float)
+        
+        # Proceed with the predictor
+        predictor = self._clean_and_limit(U, U + 0.5 * dt_tensor * k1)
         k2 = self.spatial_operator(predictor, rain_half, infiltration)
-        updated = self._clean_and_limit(U, U + dt * k2)
+        updated = self._clean_and_limit(U, U + dt_tensor * k2)
 
         if self.cfg.apply_friction:
             roughness_tensor = self._expand(self.roughness_length, U.shape[0])
             if self.cfg.frictionmodel == "manning":
                 updated = apply_manning_friction(
-                    updated, roughness_tensor, dt, 
+                    updated, roughness_tensor, dt_tensor, 
                     dry_depth=self.cfg.dry_depth, epsilon=self.cfg.epsilon,
                 )
             else:
                 updated = apply_roughness_length_friction(
-                    updated, self._expand(self.roughness_length, U.shape[0]), dt,
+                    updated, self._expand(self.roughness_length, U.shape[0]), dt_tensor,
                     dry_depth=self.cfg.dry_depth, epsilon=self.cfg.epsilon,
                 )
-        return updated
+        # Return both the updated U and the dt_value that was used
+        return updated, dt_float
 
-    def forward(self, U0, t_end, start_time=0.0, max_steps=100000,
+    def forward(self, U0, t_end, start_time=0.0, max_steps=1e10,
                 infiltration=None, callback=None):
         """Advance from start_time to start_time+t_end with adaptive CFL steps."""
         U = U0
         hmax = U[:, 0].clone()
         elapsed = 0.0
-        for iteration in range(max_steps):
+        for iteration in range(int(max_steps)):
             if elapsed >= t_end - 1.0e-14:
                 return U, hmax            
             
@@ -452,16 +468,22 @@ class SWE2D(nn.Module):
                     current_wl = w0 + weight * (w1 - w0)
                     self.cfg.constant_level = current_wl.item()
             # ----------------------------------------------
+
+            # Calculate remaining time to cap dt to avoid overshoot time out of range
+            max_dt = t_end - elapsed
+            # --- Hide the changing floats from Dynamo by wrapping them in Tensors ---
+            max_dt_t = torch.tensor(max_dt, dtype=U.dtype, device=U.device)
+            time_t = torch.tensor(start_time + elapsed, dtype=U.dtype, device=U.device)
             
-            dt = min(float(self.stable_dt(U).detach()), t_end - elapsed)
-            U = self.step(U, dt, start_time + elapsed, infiltration)
+            U, dt_value = self.step(U, time_t, max_dt_t, infiltration)
+            
             hmax = torch.maximum(hmax, U[:, 0])
-            elapsed += dt
+            elapsed += dt_value
 
             # --- MICRO-STEP TRACKING FOR GAUGES---
             if self.track_gauges:
                 self.ts_time.append(start_time + elapsed)
-                self.ts_dt.append(dt)
+                self.ts_dt.append(dt_value)
                 
                 # Loop through the dictionary of gauges
                 for name, (iy, ix) in self.gauge_indices.items():

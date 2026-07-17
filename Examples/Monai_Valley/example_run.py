@@ -111,6 +111,8 @@ times = []
 
 # Run inference mode to avoid gradient tracking and reduce memory usage in forward pass
 model.eval()
+# Speed up PyTorch code by just-in-time (JIT) compiling it into optimized C++ kernels
+model = torch.compile(model)
 with torch.inference_mode():
     U = U0.clone()    
     # --- The Time Loop ---
