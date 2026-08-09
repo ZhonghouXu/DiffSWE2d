@@ -14,6 +14,7 @@ _VALID_BOUNDARY_TYPES = {
     "constant",
     "water_level",
     "wall",
+    "absorbing",
 }
 
 
@@ -260,7 +261,7 @@ def add_ghost_cells(
     # ================================================================
 
     uses_water_level = any(
-        boundary_type == "water_level"
+        boundary_type in ("water_level", "absorbing")
         for boundary_type in boundaries.values()
     )
 
@@ -314,6 +315,18 @@ def add_ghost_cells(
             :, 1:2, :, ng:2 * ng
         ].flip(dims=(-1,))
 
+    elif boundary_left == "absorbing":
+        # Flather radiation condition for -x direction
+        h_ghost = Up[:, 0:1, :, :ng]
+        h_ref = forced_h[:, :, :, :ng]
+        
+        # If the reference boundary is wet, use it for celerity. 
+        # If dry, use the interior depth to allow a free outfall.
+        h_for_c = torch.where(h_ref > 1e-4, h_ref, h_ghost)
+        c = torch.sqrt(9.81 * torch.clamp(h_for_c, min=1e-6)) # Clamped for safe autograd
+        # Outward normal is -x
+        Up[:, 1:2, :, :ng] = -c * (h_ghost - h_ref)
+
     # A transmissive boundary needs no additional operation.
 
     # ================================================================
@@ -335,6 +348,14 @@ def add_ghost_cells(
             :, 1:2, :, -2 * ng:-ng
         ].flip(dims=(-1,))
 
+    elif boundary_right == "absorbing":
+        h_ghost = Up[:, 0:1, :, -ng:]
+        h_ref = forced_h[:, :, :, -ng:]
+        h_for_c = torch.where(h_ref > 1e-4, h_ref, h_ghost)
+        c = torch.sqrt(9.81 * torch.clamp(h_for_c, min=1e-6))        
+        # Outward normal is +x
+        Up[:, 1:2, :, -ng:] = c * (h_ghost - h_ref)
+
     # ================================================================
     # 5. TOP BOUNDARY
     # ================================================================
@@ -354,6 +375,14 @@ def add_ghost_cells(
             :, 2:3, ng:2 * ng, :
         ].flip(dims=(-2,))
 
+    elif boundary_top == "absorbing":
+        h_ghost = Up[:, 0:1, :ng, :]
+        h_ref = forced_h[:, :, :ng, :]
+        h_for_c = torch.where(h_ref > 1e-4, h_ref, h_ghost)
+        c = torch.sqrt(9.81 * torch.clamp(h_for_c, min=1e-6))        
+        # Outward normal is -y
+        Up[:, 2:3, :ng, :] = -c * (h_ghost - h_ref)
+
     # ================================================================
     # 6. BOTTOM BOUNDARY
     # ================================================================
@@ -372,5 +401,13 @@ def add_ghost_cells(
         Up[:, 2:3, -ng:, :] = -Up[
             :, 2:3, -2 * ng:-ng, :
         ].flip(dims=(-2,))
+
+    elif boundary_bottom == "absorbing":
+        h_ghost = Up[:, 0:1, -ng:, :]
+        h_ref = forced_h[:, :, -ng:, :]
+        h_for_c = torch.where(h_ref > 1e-4, h_ref, h_ghost)
+        c = torch.sqrt(9.81 * torch.clamp(h_for_c, min=1e-6))        
+        # Outward normal is +y
+        Up[:, 2:3, -ng:, :] = c * (h_ghost - h_ref)
 
     return Up, zp
