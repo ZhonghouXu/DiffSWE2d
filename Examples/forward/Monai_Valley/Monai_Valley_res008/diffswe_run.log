@@ -1,0 +1,9 @@
+2026-07-22 10:54:21 - === Simulation Started at: 2026-07-22 10:54:21 ===
+2026-07-22 10:54:21 - cells: 42, 68, square resolution: 0.08
+2026-07-22 10:55:27 - Step:     1 | Sim Clock Time:    30.00s | Max Depth: 0.134611m | Min Depth: 0.000000m
+2026-07-22 10:55:27 - depth range: 0.000000, 0.134611
+2026-07-22 10:55:27 - Successfully saved 6 micro-step gauge text files!
+2026-07-22 10:55:27 - Saved maximum water depth to netcdf file
+2026-07-22 10:55:27 - === Simulation Ended at: 2026-07-22 10:55:27 ===
+2026-07-22 10:55:27 - Total Physical Time Simulated: 30.00 seconds
+2026-07-22 10:55:27 - Total Computational Time: 0.0183h
