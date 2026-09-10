@@ -13,6 +13,16 @@ conda activate diffswe2d
 pip install -r requirements.txt
 ```
 
+## How to run an example scenario
+Forward modelling (inference mode)
+```bash
+python ./Examples/forward/Monai_Valley/Monai_Valley_res001/example_run.py
+```
+Inverse modelling
+```bash
+python ./Examples/inverse/Monai_Valley/Monai_Velley_BC_inversion_spline_lr002_6simg/bc_inversion_train.py
+```
+
 ## Citation
 If you find this useful, consider citing: Xu, Z (2026). DiffSWE2d: a differentiable Shallow Water Equations solver for
 end-to-end flood and tsunami modelling. 
