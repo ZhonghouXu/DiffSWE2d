@@ -28,7 +28,7 @@ https://github.com/user-attachments/assets/4a560014-8c3e-4efb-8b35-3f9ac6adcb56
 
 ## Citation
 If you find this useful, consider citing: Xu, Z (2026). DiffSWE2d: a differentiable Shallow Water Equations solver for
-end-to-end flood and tsunami modelling. 
+end-to-end flood and tsunami modelling. http://arxiv.org/abs/2609.11426
 
 
 
